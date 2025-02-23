@@ -1,0 +1,6 @@
+components:
+  schemas:
+    Scope:
+      type: string
+      enum:
+        - listings:review

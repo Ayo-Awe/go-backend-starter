@@ -1,0 +1,134 @@
+openapi: 3.0.0
+info:
+  title: Go Starter API
+  version: 1.0.0
+  license:
+    name: Proprietary
+    url: https://starter.com/terms-and-conditions
+  description: Go backend starter API
+
+servers:
+  - url: https://api.starter.com
+
+paths:
+  /api/v1:
+    get:
+      summary: Welcome to Go Starter API
+      operationId: Welcome
+
+      responses:
+        "200":
+          description: Welcome to Go Starter API
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                properties:
+                  message:
+                    type: string
+                    example: Welcome to Go Starter Films API
+
+components:
+  responses:
+    BadRequestError:
+      description: Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    InternalServerError:
+      description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    UnauthorizedError:
+      description: Invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    ForbiddenError:
+      description: Access forbidden – user does not have required privileges
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    ConflictError:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      required:
+        - message
+        - error_code
+      properties:
+        error_code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+
+    UserProfile:
+      type: object
+      required:
+        - scopes
+      properties:
+        scopes:
+          type: array
+          items:
+            $ref: internal/rbac/scopes.yml#/components/schemas/Scope
+
+    ErrorCode:
+      type: string
+      description: "List of all custom API error codes"
+      enum:
+        - INVALID_AUTH_TOKEN
+        - USER_ALREADY_EXISTS
+        - INVALID_REQUEST_PARAMETERS
+        - UNEXPECTED_ERROR
+        - RATE_LIMIT_EXCEEDED
+        - UNKNOWN_ENDPOINT
+        - SECURITY_REQUIREMENTS_NOT_SATISFIED
+        - INVALID_CREDENTIALS
+
+      # The generated code doesn't include the underscore in the enum names,
+      # so we need to override them with more readable names.
+      x-enumNames:
+        - InvalidAuthToken
+        - UserAlreadyExists
+        - InvalidRequestParameters
+        - UnexpectedError
+        - RateLimitExceeded
+        - UnknownEndpoint
+        - SecurityRequirementsNotSatisfied
+        - InvalidCredentials
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-KEY
+
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+security:
+  - ApiKeyAuth: []

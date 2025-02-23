@@ -1,0 +1,209 @@
+version: "3"
+
+env:
+  GOBASE: "{{.USER_WORKING_DIR}}"
+  GOBIN: "{{.GOBASE}}/bin"
+  SQLC_VERSION: "v1.27.0"
+  OAPI_CODEGEN_VERSION: "v2.3.0"
+  AIR_VERSION: "v1.52.3"
+  GOOSE_DBSTRING: "{{.DATABASE_URL}}"
+  GOOSE_MIGRATION_DIR: "{{.USER_WORKING_DIR}}/internal/db/migrations"
+  VACUUM_VERSION: "v0.16.2"
+
+dotenv: [".env"]
+
+silent: true
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  run:
+    desc: Run the application
+    cmds:
+      - go run ./cmd/server
+
+  # <------------------------------------------------- Docker ------------------------------------------------- >
+  docker/up:
+    desc: Start docker containers
+    requires:
+      vars:
+        - DB_USER
+        - DB_PASSWORD
+        - DB_NAME
+        - DB_PORT
+    cmds:
+      - docker-compose -f ./docker-compose.yml up -d
+
+  docker/down:
+    desc: Stop docker containers
+    cmds:
+      - docker-compose -f ./docker-compose.yml down -v
+
+  # <------------------------------------------------- Code Generation ------------------------------------------------- >
+  generate/api:
+    desc: Generate api models
+    deps:
+      - install/oapi-codegen
+      - task: lint/openapi
+
+    cmds:
+      - echo "Generating API models and code"
+      - "{{.GOBIN}}/oapi-codegen --config=internal/oapi/api-codegen.yml openapi.yml"
+      - "{{.GOBIN}}/oapi-codegen --config=internal/rbac/scopes-codegen.yml internal/rbac/scopes.yml"
+
+  generate/db:
+    desc: Generate SQLC code
+    deps: [install/sqlc]
+    cmds:
+      - echo "Generating database queries and models"
+      - "{{.GOBIN}}/sqlc generate"
+
+  # <------------------------------------------------- Database Migrations ------------------------------------------------- >
+  migrations/up:
+    desc: Run database migrations up
+    deps: [build/goose]
+    requires:
+      vars:
+        - DATABASE_URL
+
+    cmds:
+      - echo "Running database migrations up"
+      - "{{.GOBIN}}/goose up"
+
+  migrations/drop:
+    desc: Rollback all database migrations
+    deps: [build/goose]
+    prompt: Are you sure you want to drop all database migrations?
+    requires:
+      vars:
+        - DATABASE_URL
+
+    cmds:
+      - echo "Rolling back all database migrations..."
+      - "{{.GOBIN}}/goose reset"
+
+  migrations/status:
+    desc: Get the status of the database migrations
+    deps: [build/goose]
+    requires:
+      vars:
+        - DATABASE_URL
+
+    cmds:
+      - "{{.GOBIN}}/goose status"
+
+  migrations/create:
+    desc: Create a new database migration
+    deps: [build/goose]
+
+    vars:
+      type: "{{ .type | default 'sql' }}"
+
+    requires:
+      vars:
+        - name
+        - name: type
+          enum: ["go", "sql"]
+
+    cmds:
+      - "{{.GOBIN}}/goose create {{.CLI_ARGS}}"
+
+  # <------------------------------------------------- Code Q/A ------------------------------------------------- >
+  test:
+    desc: Run tests
+    deps:
+      - generate/api
+      - generate/db
+    cmds:
+      - go test -cover ./...
+
+  vet:
+    desc: Vet golang code
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Lint golang code locally
+    deps: [install/golangci-lint]
+    cmds:
+      - golangci-lint run ./...
+
+  # TODO: trim the table out of the vacuum output
+  lint/openapi:
+    desc: Lint OpenAPI 3.0 spec
+    deps: [install/vacuum]
+    vars:
+      HIDE_OPENAPI_LINT_OUTPUT: false
+    cmds:
+      - echo "Linting OpenAPI 3.0 spec"
+      - "{{.GOBIN}}/vacuum lint -dqbesm {{if .HIDE_OPENAPI_LINT_OUTPUT}} -x {{end}} openapi.yml"
+
+  # <------------------------------------------------- Local Development Tools ------------------------------------------------- >
+  build/goose:
+    desc: Build custom goose binary
+    sources:
+      - internal/db/migrations/*.go
+      - cmd/goose/*.go
+    generates:
+      - "{{.GOBIN}}/goose"
+    cmds:
+      - echo "Building custom goose binary"
+      - go build -o {{.GOBIN}}/goose cmd/goose/main.go
+
+  install/sqlc:
+    internal: true
+    desc: Install sqlc
+    status:
+      - test -f {{.GOBIN}}/sqlc
+    cmds:
+      - echo "Installing sqlc"
+      - go install github.com/sqlc-dev/sqlc/cmd/sqlc@{{.SQLC_VERSION}}
+
+  install/oapi-codegen:
+    internal: true
+    desc: Install oapi codegen CLI
+    status:
+      - test -f {{.GOBIN}}/oapi-codegen
+    cmds:
+      - echo  "Installing oapi-codegen"
+      - go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@{{.OAPI_CODEGEN_VERSION}}
+
+  install/air:
+    internal: true
+    desc: Install air
+    status:
+      - test -f {{.GOBIN}}/air
+    cmds:
+      - echo "Installing air"
+      - go install github.com/air-verse/air@{{.AIR_VERSION}}
+
+  install/vacuum:
+    internal: true
+    desc: Install vacuum (OpenAPI 3.0 validator/linter)
+    status:
+      - test -f {{.GOBIN}}/vacuum
+    cmds:
+      - echo "Installing vacuum"
+      - go install github.com/daveshanley/vacuum@{{.VACUUM_VERSION}}
+
+  install/golangci-lint:
+    internal: true
+    desc: Install golangci-lint
+    status:
+      - test -f {{.GOBIN}}/golangci-lint
+    cmds:
+      - echo "Installing golangci-lint"
+      - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b {{.GOBIN}} v1.59.0
+
+  tools:
+    desc: Install tools for local development
+    deps:
+      - install/sqlc
+      - install/oapi-codegen
+      - install/air
+      - install/golangci-lint
+      - build/goose
+      - install/vacuum
